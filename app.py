@@ -3,18 +3,17 @@ import subprocess
 import json
 import random
 import sqlite3
-import hashlib
-import time
 import urllib.request
 import urllib.parse
-from flask import Flask, jsonify, render_template_string, request, send_from_directory, g
+from html.parser import HTMLParser
+from flask import Flask, jsonify, render_template_string, request, send_from_directory
+from bs4 import BeautifulSoup
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.config['SECRET_KEY'] = os.urandom(32).hex()
 
 DB_PATH = "/root/jarvis/jarvis_nexus.db"
 
-# --- CYBERSECURITY & PERSISTENT MEMORY SETUP ---
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -44,7 +43,6 @@ def log_security(ip, event, severity="INFO"):
     except Exception:
         pass
 
-# --- SECURITY HEADERS ---
 @app.after_request
 def add_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -53,10 +51,82 @@ def add_security_headers(response):
     response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com https://fonts.gstatic.com;"
     return response
 
+# --- MOTEUR FIRECRAWL FAIT MAISON (100% OPEN SOURCE & GRATUIT) ---
+class HTMLToMarkdownParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.markdown = []
+        self.in_script = False
+        self.in_style = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'script':
+            self.in_script = True
+        elif tag == 'style':
+            self.in_style = True
+        elif tag in ['h1', 'h2', 'h3']:
+            self.markdown.pappend('\n\n### ')
+        elif tag == 'p':
+            self.markdown.append('\n\n')
+        elif tag == 'li':
+            self.markdown.append('\n- ')
+
+    def handle_endtag(self, tag):
+        if tag == 'script':
+            self.in_script = False
+        elif tag == 'style':
+            self.in_style = False
+
+    def handle_data(self, data):
+        if not self.in_script and not self.in_style:
+            texte = data.strip()
+            if texte:
+                self.markdown.append(texte + " ")
+
+    def get_markdown(self):
+        return "".join(self.markdown)
+
+def firecrawl_fait_maison(url_cible):
+    """Moteur de web scraping et conversion Markdown fait maison, 100% gratuit et open source"""
+    try:
+        req = urllib.request.Request(
+            url_cible,
+            headers={"User-Agent": "Mozilla/5.0 (StarkAI-Nexus/Enterprise-Scraper)"}
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            html_content = response.read().decode("utf-8", errors="ignore")
+            
+            # Utilisation de BeautifulSoup pour nettoyer les éléments inutiles
+            soup = BeautifulSoup(html_content, "html.parser")
+            for elem in soup(["script", "style", "nav", "footer", "aside"]):
+                elem.decompose()
+                
+            titre = soup.title.string if soup.title else "Sans titre"
+            
+            # Conversion propre en Markdown
+            parser = HTMLToMarkdownParser()
+            parser.feed(str(soup))
+            markdown_brut = parser.get_markdown()
+            
+            # Nettoyage des lignes vides multiples
+            lignes_propres = [l.strip() for l in markdown_brut.splitlines() if l.strip()]
+            markdown_final = "\n".join(lignes_propres[:60]) # Limiter aux 60 premieres lignes pertinentes
+            
+            return {
+                "succes": True,
+                "titre": titre,
+                "url": url_cible,
+                "markdown": markdown_final + "\n\n[... contenu extrait et converti par StarkAI Nexus Engine ...]"
+            }
+    except Exception as e:
+        return {
+            "succes": False,
+            "erreur": str(e)
+        }
+
 APP_NAME = "StarkAI Nexus Enterprise"
 API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY", "")
 DEFAULT_MODEL = "gemini-1.5-flash"
-CONTROLE_MODE = "total"
 
 CONNECTED_DEVICES = [
     {"id": "pc-main", "nom": "Station de Travail Principale (PC)", "type": "Ordinateur", "statut": "Chiffré & Sécurisé", "ip": "192.168.1.10"},
@@ -66,7 +136,6 @@ CONNECTED_DEVICES = [
 
 def appeler_gemini_avec_memoire(prompt, system_instruction=""):
     global API_KEY_GOOGLE
-    # Sauvegarder dans SQLite
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -77,7 +146,7 @@ def appeler_gemini_avec_memoire(prompt, system_instruction=""):
         pass
 
     if not API_KEY_GOOGLE:
-        return f"Noyau quantique sécurisé. J'ai mémorisé votre message : '{prompt}'. (Configurez la clé Google pour l'inférence neuronale complète)."
+        return f"Noyau quantique sécurisé. Mémorisation validée : '{prompt}'. (Configurez la clé Google pour l'inférence neuronale)."
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_MODEL}:generateContent?key={API_KEY_GOOGLE}"
     payload = {
@@ -99,7 +168,6 @@ def appeler_gemini_avec_memoire(prompt, system_instruction=""):
                 parts = candidates[0].get("content", {}).get("parts", [])
                 if parts:
                     reponse = parts[0].get("text", "Pas de réponse.")
-                    # Mémoriser la réponse de l'assistant
                     conn = sqlite3.connect(DB_PATH)
                     cursor = conn.cursor()
                     cursor.execute("INSERT INTO memoire (role, content) VALUES (?, ?)", ("assistant", reponse))
@@ -118,7 +186,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>StarkAI Nexus - Enterprise & Cyber-Security OS</title>
+        <title>StarkAI Nexus - Firecrawl Fait Maison & Cyber-Sécurité</title>
         <link rel="manifest" href="/manifest.json">
         <meta name="theme-color" content="#00f0ff">
         <script src="https://cdn.tailwindcss.com"></script>
@@ -154,7 +222,7 @@ def index():
         <header class="flex flex-col md:flex-row justify-between items-center apple-card px-6 py-4 mb-6 gap-4">
             <div class="flex items-center space-x-3">
                 <div class="w-3.5 h-3.5 bg-green-400 rounded-full animate-pulse"></div>
-                <h1 class="text-xl font-bold tracking-tight">StarkAI Nexus <span class="text-xs font-normal px-2.5 py-1 rounded-full bg-green-950 text-green-400 border border-green-800">Cyber-Securisé & Mémoire Persistante</span></h1>
+                <h1 class="text-xl font-bold tracking-tight">StarkAI Nexus <span class="text-xs font-normal px-2.5 py-1 rounded-full bg-green-950 text-green-400 border border-green-800">Firecrawl Open-Source & Mémoire Persistante</span></h1>
             </div>
             <div class="flex items-center space-x-3">
                 <button onclick="toggleLiveVideo()" id="live-video-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-medium transition">🔴 Live Vidéo : OFF</button>
@@ -173,12 +241,12 @@ def index():
                     <button onclick="triggerRemotePhoto()" class="w-full py-2.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 text-white rounded-xl text-xs font-medium transition shadow-sm">📸 Capture Sécurisée (Caméra)</button>
                 </div>
 
+                <!-- Moteur Firecrawl Maison -->
                 <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider opacity-60 mb-2">Audit Cyber-Sécurité</h2>
-                    <div id="security-audit" class="text-[11px] text-green-400 font-mono space-y-1">
-                        <div>[✓] Chiffrement AES-256 actif</div>
-                        <div>[✓] Firewall & IDS opérationnel</div>
-                        <div>[✓] Mémoire SQLite chiffrée</div>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider opacity-60 mb-3">Firecrawl (100% Gratuit & Local)</h2>
+                    <div class="space-y-2">
+                        <input type="text" id="scrape-url" placeholder="https://exemple.com" class="w-full bg-black/50 border border-cyan-500/30 p-2 text-xs text-cyan-300 rounded-xl focus:outline-none">
+                        <button onclick="runCustomScraper()" class="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-black font-bold rounded-xl text-xs transition">Extraire en Markdown</button>
                     </div>
                 </div>
 
@@ -196,7 +264,7 @@ def index():
                     <div class="flex items-start space-x-3">
                         <div class="w-8 h-8 rounded-full bg-cyan-500 text-black flex items-center justify-center font-bold text-xs">S</div>
                         <div class="chat-bubble-nexus p-4 max-w-xl">
-                            Systèmes opérationnels, Monsieur. Ma mémoire persistante est activée : je me souviens de vous et de l'ensemble de nos interactions. Mes protocoles de cybersécurité protègent chaque échange. Que faisons-nous ?
+                            Systèmes opérationnels, Monsieur. Mon moteur <strong>Firecrawl fait maison</strong> est prêt à extraire n'importe quelle page web et à la convertir en Markdown propre sans aucun service payant. Que souhaitez-vous analyser ?
                         </div>
                     </div>
                 </div>
@@ -231,6 +299,25 @@ def index():
                 fetch('/api/camera/capture', {method: 'POST'})
                 .then(res => res.json())
                 .then(data => { appendMessage('StarkAI Nexus', data.message, false); });
+            }
+
+            function runCustomScraper() {
+                const url = document.getElementById('scrape-url').value.trim();
+                if (!url) return;
+                appendMessage('Utilisateur', `Extraction Firecrawl maison de : ${url}`, true);
+                fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: url})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.succes) {
+                        appendMessage('StarkAI Nexus', `<strong>Titre :</strong> ${data.titre}<br><pre class="bg-black/80 text-cyan-300 p-2 rounded mt-2 text-xs overflow-x-auto">${data.markdown}</pre>`, false);
+                    } else {
+                        appendMessage('StarkAI Nexus', `Erreur d'extraction : ${data.erreur}`, false);
+                    }
+                });
             }
 
             let liveVideoActive = false;
@@ -310,20 +397,28 @@ def sw():
 
 @app.route("/api/devices")
 def api_devices():
-    log_security(request.remote_addr, "Consultation de la liste des appareils sécurisés", "INFO")
+    log_security(request.remote_addr, "Consultation appareils", "INFO")
     return jsonify({"status": "success", "devices": CONNECTED_DEVICES})
 
 @app.route("/api/camera/capture", methods=["POST"])
 def api_camera_capture():
-    log_security(request.remote_addr, "Ordre de capture caméra exécuté", "WARNING")
-    return jsonify({"status": "success", "message": "📸 Capture sécurisée effectuée sous haute protection cryptographique, Monsieur."})
+    log_security(request.remote_addr, "Capture caméra", "WARNING")
+    return jsonify({"status": "success", "message": "📸 Capture sécurisée effectuée, Monsieur."})
+
+@app.route("/api/scrape", methods=["POST"])
+def api_scrape():
+    data = request.get_json() or {}
+    url = data.get("url", "")
+    log_security(request.remote_addr, f"Firecrawl fait maison exécuté sur {url}", "INFO")
+    resultat = firecrawl_fait_maison(url)
+    return jsonify(resultat)
 
 @app.route("/api/config-key", methods=["POST"])
 def api_config_key():
     global API_KEY_GOOGLE
     data = request.get_json() or {}
     API_KEY_GOOGLE = data.get("api_key", "")
-    log_security(request.remote_addr, "Mise à jour de la clé API Google", "HIGH")
+    log_security(request.remote_addr, "Mise à jour clé API Google", "HIGH")
     return jsonify({"status": "success"})
 
 @app.route("/api/chat", methods=["POST"])
@@ -332,7 +427,6 @@ def api_chat():
     data = request.get_json() or {}
     msg = data.get("message", "")
     
-    # Récupérer l'historique de mémoire pour donner du contexte
     historique_contexte = ""
     try:
         conn = sqlite3.connect(DB_PATH)
@@ -345,10 +439,10 @@ def api_chat():
     except Exception:
         pass
 
-    system_prompt = f"Tu es StarkAI Nexus, un assistant intelligent doté d'une mémoire persistante. Voici l'historique récent de nos échanges :\n{historique_contexte}\n\nRéponds de manière chaleureuse, humaine et en te souvenant de tout ce qui a été dit."
+    system_prompt = f"Tu es StarkAI Nexus, un assistant intelligent doté d'une mémoire persistante et d'un moteur Firecrawl open-source. Historique :\n{historique_contexte}\n\nRéponds avec empathie et précision."
     
     resp = appeler_gemini_avec_memoire(msg, system_instruction=system_prompt)
-    log_security(request.remote_addr, f"Interaction chat traitée (longueur msg: {len(msg)})", "INFO")
+    log_security(request.remote_addr, "Chat interaction", "INFO")
     return jsonify({"status": "success", "response": resp})
 
 if __name__ == "__main__":
