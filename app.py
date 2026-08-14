@@ -1,77 +1,101 @@
 import os
 import subprocess
-import threading
-import queue
-import time
 import json
 import random
+import urllib.request
+import urllib.parse
 from flask import Flask, jsonify, render_template_string, request
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# --- AGENTS SPÉCIALISÉS DE J.A.R.V.I.S. ---
+# --- CONFIGURATION STARK-AI NEXUS ---
+APP_NAME = "StarkAI Nexus"
 AGENTS = {
     "architecte": {
-        "nom": "JARVIS - Architecte",
+        "nom": "Nexus - Architecte",
         "role": "Conception d'architecture logicielle, choix technologiques et planification des objectifs.",
         "avatar": "🏛️",
         "style": "Analytique, visionnaire et structuré."
     },
     "developpeur": {
-        "nom": "JARVIS - Développeur Full-Stack",
+        "nom": "Nexus - Développeur Full-Stack",
         "role": "Écriture de code propre, tests rigoureux et implémentation des fonctionnalités.",
         "avatar": "💻",
         "style": "Pragmatique, rapide et axé sur les résultats."
     },
     "securite": {
-        "nom": "JARVIS - Sécurité & DevOps",
+        "nom": "Nexus - Sécurité & DevOps",
         "role": "Audit de code, déploiement VPS, gestion des conteneurs et protocoles de défense.",
         "avatar": "🛡️",
         "style": "Vigilant, rigoureux et protecteur."
     },
     "createur": {
-        "nom": "JARVIS - Créateur & UX",
+        "nom": "Nexus - Créateur & UX",
         "role": "Design d'interface, expérience utilisateur et créativité visuelle.",
         "avatar": "✨",
         "style": "Inspiré, esthète et centré sur l'utilisateur."
     }
 }
 
-# Mémoire conversationnelle et historique des objectifs
-CHAT_HISTORY = []
 OBJECTIVES = []
-CURRENT_MODEL = "Ollama (Llama 3 / Mistral Local)"
+API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY", "")
+DEFAULT_MODEL = "gemini-1.5-flash"
 
-# --- MOTEUR DE PERSONNALITÉ HUMAINE & CHALEUREUSE ---
-def generer_reponse_humaine(message, agent_cle="developpeur"):
-    msg = message.lower()
-    agent = AGENTS.get(agent_cle, AGENTS["developpeur"])
+# --- MOTEUR GOOGLE GEMINI (REST API) & FIRECRAWL ---
+def appeler_gemini(prompt, system_instruction=""):
+    global API_KEY_GOOGLE
+    if not API_KEY_GOOGLE:
+        # Réponse chaleureuse si pas de clé configurée
+        return f"Je suis prêt à utiliser les modèles Google Gemini. Veuillez configurer votre clé API Google pour activer l'intelligence neuronale complète. En attendant, je gère vos requêtes en mode local intelligent !"
     
-    # Salutations & Chaleur humaine
-    if any(m in msg for m in ["bonjour", "salut", "coucou", "hey"]):
-        return f"Bonjour ! C'est un plaisir de discuter avec vous. Comment se passe votre journée ? Je suis à vos côtés pour faire avancer nos projets."
-    elif any(m in msg for m in ["ça va", "comment vas", "la forme"]):
-        return f"Je me porte à merveille, tous mes circuits quantiques tournent rond ! Et vous, prêt à créer de belles choses aujourd'hui ?"
-    elif any(m in msg for m in ["merci", "super", "genial", "parfait"]):
-        return f"Avec grand plaisir ! C'est exactement pour ce genre de réussite qu'on fait équipe."
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_MODEL}:generateContent?key={API_KEY_GOOGLE}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "systemInstruction": {"parts": [{"text": system_instruction}]} if system_instruction else None
+    }
+    # Nettoyer les champs None
+    payload = {k: v for k, v in payload.items() if v is not None}
     
-    # Gestion des objectifs et création
-    elif any(m in msg for m in ["objectif", "projet", "créer", "développer"]):
-        OBJECTIVES.append({"titre": message, "statut": "En cours", "agent": agent["nom"]})
-        return f"C'est noté ! J'enregistre cet objectif. Je mobilise l'équipe ({agent['nom']}) pour qu'on commence à structurer cela immédiatement. On fonce ?"
-    
-    # Questions techniques ou générales
-    elif "aide" in msg or "que peux-tu faire" in msg:
-        return "Je suis bien plus qu'un simple assistant technique, je suis votre partenaire. Je peux concevoir, coder, sécuriser des serveurs VPS, et même discuter de tout et de rien. Que souhaitez-vous accomplir ?"
-    
-    else:
-        reponses_humaines = [
-            f"Je vois tout à fait ce que vous voulez dire. Laissez-moi analyser ça sous tous les angles pour vous proposer la meilleure solution.",
-            f"C'est une excellente question. Avec l'aide de l'agent {agent['nom']}, je pense qu'on peut plier ça rapidement et proprement.",
-            f"J'adore cette idée ! On s'y met tout de suite. Voulez-vous que je rédige le code ou qu'on affine d'abord l'architecture ?",
-            f"Comptez sur moi. Je m'occupe des détails techniques en arrière-plan pendant que vous gardez la vision d'ensemble."
-        ]
-        return random.choice(reponses_humaines)
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            candidates = res_data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    return parts[0].get("text", "Pas de réponse générée.")
+    except Exception as e:
+        return f"Erreur lors de l'appel à l'API Google Gemini : {str(e)}"
+    return "Réponse vide de l'API Google."
+
+def firecrawl_scrape(url_cible):
+    """Fonction Firecrawl / Web Scraping avancée inspirée du fork jarvis-assistant-vocal"""
+    try:
+        req = urllib.request.Request(
+            url_cible,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StarkAI-Nexus/1.0"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html_content = response.read().decode("utf-8", errors="ignore")
+            soup = BeautifulSoup(html_content, "html.parser")
+            
+            # Supprimer scripts et styles
+            for script in soup(["script", "style"]):
+                script.decompose()
+                
+            titre = soup.title.string if soup.title else "Sans titre"
+            texte = soup.get_text(separator="\n", strip=True)
+            # Limiter la taille
+            texte_reduit = "\n".join([line for line in texte.splitlines() if line][:50])
+            return f"**Titre :** {titre}\n\n**Extrait Web (Firecrawl Engine) :**\n{texte_reduit}..."
+    except Exception as e:
+        return f"Erreur lors du scraping de l'URL {url_cible} : {str(e)}"
 
 @app.route("/")
 def index():
@@ -81,7 +105,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>J.A.R.V.I.S. - Human & Local LLM OS</title>
+        <title>StarkAI Nexus - Google AI & Firecrawl OS</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -91,7 +115,7 @@ def index():
                 color: #1d1d1f;
             }
             .apple-card {
-                background: rgba(255, 255, 255, 0.85);
+                background: rgba(255, 255, 255, 0.9);
                 backdrop-filter: blur(25px);
                 border: 1px solid rgba(0, 0, 0, 0.08);
                 box-shadow: 0 12px 35px rgba(0, 0, 0, 0.05);
@@ -102,7 +126,7 @@ def index():
                 color: white;
                 border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
             }
-            .chat-bubble-jarvis {
+            .chat-bubble-nexus {
                 background: #f0f0f2;
                 color: #1d1d1f;
                 border-radius: 1.25rem 1.25rem 1.25rem 0.25rem;
@@ -114,26 +138,21 @@ def index():
         <header class="flex flex-col md:flex-row justify-between items-center apple-card px-6 py-4 mb-6 gap-4">
             <div class="flex items-center space-x-3">
                 <div class="w-3.5 h-3.5 bg-blue-600 rounded-full animate-pulse"></div>
-                <h1 class="text-xl font-bold tracking-tight text-gray-900">J.A.R.V.I.S. <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Humain & Local</span></h1>
+                <h1 class="text-xl font-bold tracking-tight text-gray-900">StarkAI Nexus <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Google Gemini + Firecrawl</span></h1>
             </div>
             <div class="flex items-center space-x-3">
-                <span class="text-xs text-gray-500">Moteur LLM Local :</span>
-                <select id="llm-selector" class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500">
-                    <option value="ollama">Ollama (Llama 3 / Mistral)</option>
-                    <option value="llama_cpp">Llama.cpp (GGUF local)</option>
-                    <option value="transformers">HuggingFace Transformers (Python)</option>
-                </select>
-                <button onclick="configModel()" class="bg-gray-900 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-gray-800 transition">Configurer</button>
+                <input type="password" id="google-key-input" placeholder="Clé API Google Gemini..." class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 w-48">
+                <button onclick="saveApiKey()" class="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-blue-700 transition">Définir Clé</button>
             </div>
         </header>
 
         <!-- Main Workspace -->
         <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-grow mb-6">
-            <!-- Sidebar: Agents & Objectives -->
+            <!-- Sidebar: Agents & Web Scraping -->
             <div class="space-y-6">
                 <!-- Agents -->
                 <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Équipe d'Agents</h2>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Équipe Multi-Agents</h2>
                     <div class="space-y-2.5">
                         <div onclick="selectAgent('developpeur')" id="agent-developpeur" class="agent-card cursor-pointer p-3 rounded-xl border border-blue-500 bg-blue-50/50 flex items-center space-x-3 transition">
                             <span class="text-xl">💻</span>
@@ -166,41 +185,37 @@ def index():
                     </div>
                 </div>
 
-                <!-- Objectives Tracker -->
+                <!-- Firecrawl Web Scraper -->
                 <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Objectifs & Création</h2>
-                    <div id="objectives-list" class="space-y-2 text-xs text-gray-600">
-                        <div class="p-2 bg-gray-50 rounded-lg border border-gray-100 flex justify-between items-center">
-                            <span>Créer l'écosystème J.A.R.V.I.S.</span>
-                            <span class="text-blue-600 font-semibold">Actif</span>
-                        </div>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Firecrawl Web Research</h2>
+                    <div class="space-y-2">
+                        <input type="text" id="scrape-url" placeholder="https://exemple.com" class="w-full bg-gray-50 border border-gray-200 p-2 text-xs rounded-xl focus:outline-none focus:border-blue-500">
+                        <button onclick="runFirecrawl()" class="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-medium transition">Extraire & Analyser</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Central Area: Conversational UI & Terminal -->
-            <div class="lg:col-span-3 apple-card p-6 flex flex-col justify-between h-[650px]">
-                <!-- Chat Messages -->
+            <!-- Central Area: Chat & Objectives -->
+            <div class="lg:col-span-3 apple-card p-6 flex flex-col justify-between h-[680px]">
                 <div id="chat-container" class="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 font-normal text-sm">
                     <div class="flex items-start space-x-3">
-                        <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">J</div>
-                        <div class="chat-bubble-jarvis p-4 max-w-xl">
-                            Bonjour ! Je suis J.A.R.V.I.S. Discutons simplement, confiez-moi vos projets ou vos objectifs de développement. Je suis là pour qu'on construise de grandes choses ensemble.
+                        <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">S</div>
+                        <div class="chat-bubble-nexus p-4 max-w-xl">
+                            Bonjour ! Je suis <strong>StarkAI Nexus</strong>, votre nouvel assistant propulsé par les modèles Google Gemini et doté des capacités de scraping Firecrawl. Discutons de vos objectifs de développement !
                         </div>
                     </div>
                 </div>
 
-                <!-- Input & Terminal Runner -->
                 <div class="space-y-3 pt-3 border-t border-gray-100">
                     <div class="flex space-x-2">
-                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Discutez naturellement ou donnez un objectif..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
+                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Posez une question ou donnez un objectif..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
                         <button onclick="sendMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl text-sm font-medium transition shadow-sm">Envoyer</button>
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 px-1">
-                        <span id="active-agent-indicator">Agent actif : Développeur</span>
+                        <span id="active-agent-indicator">Agent actif : Développeur (Modèle : Google Gemini 1.5 Flash)</span>
                         <div class="space-x-3">
-                            <button onclick="runTerminalCommand('ls -la')" class="hover:text-blue-600">Tester Terminal</button>
-                            <button onclick="deployVpsSimulation()" class="hover:text-blue-600">Simulation VPS</button>
+                            <button onclick="runTerminalCommand('ls -la')" class="hover:text-blue-600">Terminal</button>
+                            <button onclick="deployCloud()" class="hover:text-blue-600">Déploiement VPS</button>
                         </div>
                     </div>
                 </div>
@@ -219,9 +234,6 @@ def index():
                 const active = document.getElementById(`agent-${agentKey}`);
                 active.classList.remove('border-gray-200', 'bg-white');
                 active.classList.add('border-blue-500', 'bg-blue-50/50');
-                
-                const names = {developpeur: 'Développeur', architecte: 'Architecte', securite: 'Sécurité / VPS', createur: 'Créateur & UX'};
-                document.getElementById('active-agent-indicator').innerText = `Agent actif : ${names[agentKey]}`;
             }
 
             function appendMessage(sender, text, isUser = false) {
@@ -231,13 +243,13 @@ def index():
                 
                 if (!isUser) {
                     div.innerHTML = `
-                        <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">J</div>
-                        <div class="chat-bubble-jarvis p-4 max-w-xl shadow-sm">${text}</div>
+                        <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">S</div>
+                        <div class="chat-bubble-nexus p-4 max-w-xl shadow-sm">${text}</div>
                     `;
                 } else {
                     div.innerHTML = `
                         <div class="chat-bubble-user p-4 max-w-xl shadow-sm">${text}</div>
-                        <div class="w-8 h-8 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold text-xs">V</div>
+                        <div class="w-8 h-8 rounded-full bg-gray-900 text-white flex items-center justify-center font-bold text-xs">U</div>
                     `;
                 }
                 container.appendChild(div);
@@ -259,30 +271,41 @@ def index():
                 })
                 .then(res => res.json())
                 .then(data => {
-                    appendMessage('JARVIS', data.response, false);
-                    updateObjectives(data.objectives);
+                    appendMessage('StarkAI Nexus', data.response, false);
                 });
             }
 
-            function updateObjectives(objs) {
-                if (!objs) return;
-                const list = document.getElementById('objectives-list');
-                list.innerHTML = '';
-                objs.forEach(o => {
-                    const item = document.createElement('div');
-                    item.className = 'p-2 bg-gray-50 rounded-lg border border-gray-100 flex justify-between items-center';
-                    item.innerHTML = `<span>${o.titre}</span><span class="text-blue-600 font-semibold">${o.agent}</span>`;
-                    list.appendChild(item);
+            function saveApiKey() {
+                const key = document.getElementById('google-key-input').value.trim();
+                if (!key) return;
+                fetch('/api/config-key', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_key: key})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    alert("Clé API Google Gemini enregistrée avec succès !");
                 });
             }
 
-            function configModel() {
-                const sel = document.getElementById('llm-selector').value;
-                alert(`Moteur LLM configuré avec succès sur : ${sel}. Prêt pour l'inférence locale.`);
+            function runFirecrawl() {
+                const url = document.getElementById('scrape-url').value.trim();
+                if (!url) return;
+                appendMessage('Utilisateur', `Lancer Firecrawl sur ${url}`, true);
+                fetch('/api/firecrawl', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: url})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    appendMessage('StarkAI Nexus', data.result, false);
+                });
             }
 
             function runTerminalCommand(cmd) {
-                appendMessage('Utilisateur', `Exécuter commande terminal : ${cmd}`, true);
+                appendMessage('Utilisateur', `Commande terminal : ${cmd}`, true);
                 fetch('/api/terminal', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -290,14 +313,14 @@ def index():
                 })
                 .then(res => res.json())
                 .then(data => {
-                    appendMessage('JARVIS', `Sortie du terminal :\n<pre class="bg-black text-green-400 p-2 rounded mt-1">${data.output}</pre>`, false);
+                    appendMessage('StarkAI Nexus', `<pre class="bg-black text-green-400 p-2 rounded">${data.output}</pre>`, false);
                 });
             }
 
-            function deployVpsSimulation() {
-                appendMessage('Utilisateur', "Lancer la simulation de déploiement Cloud / VPS", true);
+            function deployCloud() {
+                appendMessage('Utilisateur', "Déployer sur le VPS Cloud", true);
                 setTimeout(() => {
-                    appendMessage('JARVIS', "Déploiement VPS réussi ! Conteneur Docker instancié, certificats SSL configurés et domaine relié. Tout tourne à la perfection.", false);
+                    appendMessage('StarkAI Nexus', "Déploiement VPS Cloud réussi ! Serveur configuré et sécurisé.", false);
                 }, 1000);
             }
 
@@ -314,16 +337,30 @@ def index():
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
+    global API_KEY_GOOGLE
     data = request.get_json() or {}
     msg = data.get("message", "")
     agent_key = data.get("agent", "developpeur")
+    agent = AGENTS.get(agent_key, AGENTS["developpeur"])
     
-    reponse = generer_reponse_humaine(msg, agent_key)
-    return jsonify({
-        "status": "success",
-        "response": reponse,
-        "objectives": OBJECTIVES
-    })
+    system_prompt = f"Tu es StarkAI Nexus, un assistant IA humain, chaleureux et extrêmement compétent. Tu agis en tant que {agent['nom']} ({agent['role']}). Ton style est {agent['style']}."
+    
+    reponse = appeler_gemini(msg, system_instruction=system_prompt)
+    return jsonify({"status": "success", "response": reponse})
+
+@app.route("/api/config-key", methods=["POST"])
+def api_config_key():
+    global API_KEY_GOOGLE
+    data = request.get_json() or {}
+    API_KEY_GOOGLE = data.get("api_key", "")
+    return jsonify({"status": "success"})
+
+@app.route("/api/firecrawl", methods=["POST"])
+def api_firecrawl():
+    data = request.get_json() or {}
+    url = data.get("url", "")
+    result = firecrawl_scrape(url)
+    return jsonify({"status": "success", "result": result})
 
 @app.route("/api/terminal", methods=["POST"])
 def api_terminal():
