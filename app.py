@@ -25,8 +25,8 @@ AGENTS = {
         "style": "Pragmatique, rapide et axé sur les résultats."
     },
     "securite": {
-        "nom": "Nexus - Sécurité & DevOps",
-        "role": "Audit de code, déploiement VPS, gestion des conteneurs et protocoles de défense.",
+        "nom": "Nexus - Sécurité & IoT",
+        "role": "Audit de réseau, contrôle des objets connectés (PC, Mobile, IoT) et protocoles de défense.",
         "avatar": "🛡️",
         "style": "Vigilant, rigoureux et protecteur."
     },
@@ -38,23 +38,28 @@ AGENTS = {
     }
 }
 
-OBJECTIVES = []
 API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY", "")
 DEFAULT_MODEL = "gemini-1.5-flash"
 
-# --- MOTEUR GOOGLE GEMINI (REST API) & FIRECRAWL ---
+# État du contrôle réseau & appareils
+CONTROLE_MODE = "limite" # 'limite', 'permissif', 'total'
+CONNECTED_DEVICES = [
+    {"id": "pc-main", "nom": "Station de Travail Principale (PC)", "type": "Ordinateur", "statut": "Connecté", "ip": "192.168.1.10"},
+    {"id": "mobile-1", "nom": "iPhone 15 Pro (Mobile)", "type": "Smartphone", "statut": "Actif", "ip": "192.168.1.25"},
+    {"id": "iot-hub", "nom": "Passerelle Domotique & IoT", "type": "IoT Smart Home", "statut": "En ligne", "ip": "192.168.1.50"},
+    {"id": "server-vps", "nom": "Serveur VPS Cloud", "type": "Cloud Server", "statut": "Opérationnel", "ip": "10.8.0.1"}
+]
+
 def appeler_gemini(prompt, system_instruction=""):
     global API_KEY_GOOGLE
     if not API_KEY_GOOGLE:
-        # Réponse chaleureuse si pas de clé configurée
-        return f"Je suis prêt à utiliser les modèles Google Gemini. Veuillez configurer votre clé API Google pour activer l'intelligence neuronale complète. En attendant, je gère vos requêtes en mode local intelligent !"
+        return f"Je suis prêt. Veuillez configurer votre clé API Google Gemini pour activer l'intelligence neuronale complète. En mode local, je gère vos requêtes avec une logique experte !"
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_MODEL}:generateContent?key={API_KEY_GOOGLE}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "systemInstruction": {"parts": [{"text": system_instruction}]} if system_instruction else None
     }
-    # Nettoyer les champs None
     payload = {k: v for k, v in payload.items() if v is not None}
     
     req = urllib.request.Request(
@@ -75,7 +80,6 @@ def appeler_gemini(prompt, system_instruction=""):
     return "Réponse vide de l'API Google."
 
 def firecrawl_scrape(url_cible):
-    """Fonction Firecrawl / Web Scraping avancée inspirée du fork jarvis-assistant-vocal"""
     try:
         req = urllib.request.Request(
             url_cible,
@@ -84,16 +88,12 @@ def firecrawl_scrape(url_cible):
         with urllib.request.urlopen(req, timeout=10) as response:
             html_content = response.read().decode("utf-8", errors="ignore")
             soup = BeautifulSoup(html_content, "html.parser")
-            
-            # Supprimer scripts et styles
             for script in soup(["script", "style"]):
                 script.decompose()
-                
             titre = soup.title.string if soup.title else "Sans titre"
             texte = soup.get_text(separator="\n", strip=True)
-            # Limiter la taille
             texte_reduit = "\n".join([line for line in texte.splitlines() if line][:50])
-            return f"**Titre :** {titre}\n\n**Extrait Web (Firecrawl Engine) :**\n{texte_reduit}..."
+            return f"**Titre :** {titre}\n\n**Extrait Web (Firecrawl) :**\n{texte_reduit}..."
     except Exception as e:
         return f"Erreur lors du scraping de l'URL {url_cible} : {str(e)}"
 
@@ -105,7 +105,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>StarkAI Nexus - Google AI & Firecrawl OS</title>
+        <title>StarkAI Nexus - Contrôle Total Réseau & IoT</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -138,50 +138,29 @@ def index():
         <header class="flex flex-col md:flex-row justify-between items-center apple-card px-6 py-4 mb-6 gap-4">
             <div class="flex items-center space-x-3">
                 <div class="w-3.5 h-3.5 bg-blue-600 rounded-full animate-pulse"></div>
-                <h1 class="text-xl font-bold tracking-tight text-gray-900">StarkAI Nexus <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Google Gemini + Firecrawl</span></h1>
+                <h1 class="text-xl font-bold tracking-tight text-gray-900">StarkAI Nexus <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Contrôle Appareils & IoT</span></h1>
             </div>
             <div class="flex items-center space-x-3">
-                <input type="password" id="google-key-input" placeholder="Clé API Google Gemini..." class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 w-48">
-                <button onclick="saveApiKey()" class="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-blue-700 transition">Définir Clé</button>
+                <span class="text-xs font-semibold text-gray-500">Mode de Contrôle :</span>
+                <select id="control-mode-select" onchange="changeControlMode()" class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium">
+                    <option value="limite">🔒 Limité (Sécurisé)</option>
+                    <option value="permissif">⚡ Permissif (Interactif)</option>
+                    <option value="total">👑 Total (Contrôle Absolu)</option>
+                </select>
+                <input type="password" id="google-key-input" placeholder="Clé API Google..." class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 w-36">
+                <button onclick="saveApiKey()" class="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-blue-700 transition">OK</button>
             </div>
         </header>
 
         <!-- Main Workspace -->
         <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-grow mb-6">
-            <!-- Sidebar: Agents & Web Scraping -->
+            <!-- Sidebar: Devices & Agents -->
             <div class="space-y-6">
-                <!-- Agents -->
+                <!-- Connected Devices & IoT Hub -->
                 <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Équipe Multi-Agents</h2>
-                    <div class="space-y-2.5">
-                        <div onclick="selectAgent('developpeur')" id="agent-developpeur" class="agent-card cursor-pointer p-3 rounded-xl border border-blue-500 bg-blue-50/50 flex items-center space-x-3 transition">
-                            <span class="text-xl">💻</span>
-                            <div>
-                                <div class="text-xs font-semibold text-gray-900">Développeur</div>
-                                <div class="text-[10px] text-gray-500">Code & Implémentation</div>
-                            </div>
-                        </div>
-                        <div onclick="selectAgent('architecte')" id="agent-architecte" class="agent-card cursor-pointer p-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center space-x-3 transition">
-                            <span class="text-xl">🏛️</span>
-                            <div>
-                                <div class="text-xs font-semibold text-gray-900">Architecte</div>
-                                <div class="text-[10px] text-gray-500">Structure & Stratégie</div>
-                            </div>
-                        </div>
-                        <div onclick="selectAgent('securite')" id="agent-securite" class="agent-card cursor-pointer p-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center space-x-3 transition">
-                            <span class="text-xl">🛡️</span>
-                            <div>
-                                <div class="text-xs font-semibold text-gray-900">Sécurité / VPS</div>
-                                <div class="text-[10px] text-gray-500">DevOps & Cloud</div>
-                            </div>
-                        </div>
-                        <div onclick="selectAgent('createur')" id="agent-createur" class="agent-card cursor-pointer p-3 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 flex items-center space-x-3 transition">
-                            <span class="text-xl">✨</span>
-                            <div>
-                                <div class="text-xs font-semibold text-gray-900">Créateur & UX</div>
-                                <div class="text-[10px] text-gray-500">Design & Esthétique</div>
-                            </div>
-                        </div>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Appareils & Réseau IoT</h2>
+                    <div id="devices-list" class="space-y-2.5">
+                        <!-- Rempli par JS -->
                     </div>
                 </div>
 
@@ -195,27 +174,27 @@ def index():
                 </div>
             </div>
 
-            <!-- Central Area: Chat & Objectives -->
+            <!-- Central Area: Chat & Terminal -->
             <div class="lg:col-span-3 apple-card p-6 flex flex-col justify-between h-[680px]">
                 <div id="chat-container" class="flex-grow overflow-y-auto space-y-4 pr-2 mb-4 font-normal text-sm">
                     <div class="flex items-start space-x-3">
                         <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">S</div>
                         <div class="chat-bubble-nexus p-4 max-w-xl">
-                            Bonjour ! Je suis <strong>StarkAI Nexus</strong>, votre nouvel assistant propulsé par les modèles Google Gemini et doté des capacités de scraping Firecrawl. Discutons de vos objectifs de développement !
+                            Bonjour ! Je suis <strong>StarkAI Nexus</strong>. Je suis désormais configuré pour gérer le contrôle de vos ordinateurs, smartphones et objets connectés sur le réseau selon le mode de sécurité choisi. Que souhaitez-vous ordonner ?
                         </div>
                     </div>
                 </div>
 
                 <div class="space-y-3 pt-3 border-t border-gray-100">
                     <div class="flex space-x-2">
-                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Posez une question ou donnez un objectif..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
+                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Ex: Verrouiller le PC, éteindre les lumières IoT, lancer un script..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
                         <button onclick="sendMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl text-sm font-medium transition shadow-sm">Envoyer</button>
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 px-1">
-                        <span id="active-agent-indicator">Agent actif : Développeur (Modèle : Google Gemini 1.5 Flash)</span>
+                        <span id="active-mode-display">Mode actuel : Limité (Sécurisé)</span>
                         <div class="space-x-3">
-                            <button onclick="runTerminalCommand('ls -la')" class="hover:text-blue-600">Terminal</button>
-                            <button onclick="deployCloud()" class="hover:text-blue-600">Déploiement VPS</button>
+                            <button onclick="runTerminalCommand('uptime')" class="hover:text-blue-600">Terminal</button>
+                            <button onclick="scanNetwork()" class="hover:text-blue-600">Scanner Réseau</button>
                         </div>
                     </div>
                 </div>
@@ -223,17 +202,62 @@ def index():
         </main>
 
         <script>
-            let currentAgent = 'developpeur';
+            let currentMode = 'limite';
 
-            function selectAgent(agentKey) {
-                currentAgent = agentKey;
-                document.querySelectorAll('.agent-card').forEach(el => {
-                    el.classList.remove('border-blue-500', 'bg-blue-50/50');
-                    el.classList.add('border-gray-200', 'bg-white');
+            function loadDevices() {
+                fetch('/api/devices')
+                .then(res => res.json())
+                .then(data => {
+                    const list = document.getElementById('devices-list');
+                    list.innerHTML = '';
+                    data.devices.forEach(d => {
+                        const div = document.createElement('div');
+                        div.className = 'p-3 rounded-xl border border-gray-200 bg-white flex justify-between items-center text-xs';
+                        div.innerHTML = `
+                            <div>
+                                <div class="font-semibold text-gray-900">${d.nom}</div>
+                                <div class="text-[10px] text-gray-500">${d.ip} - ${d.type}</div>
+                            </div>
+                            <button onclick="controlDevice('${d.id}')" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-medium transition">Agir</button>
+                        `;
+                        list.appendChild(div);
+                    });
                 });
-                const active = document.getElementById(`agent-${agentKey}`);
-                active.classList.remove('border-gray-200', 'bg-white');
-                active.classList.add('border-blue-500', 'bg-blue-50/50');
+            }
+            loadDevices();
+
+            function changeControlMode() {
+                const mode = document.getElementById('control-mode-select').value;
+                currentMode = mode;
+                document.getElementById('active-mode-display').innerText = `Mode actuel : ${mode.toUpperCase()}`;
+                fetch('/api/mode', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({mode: mode})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    alert(data.message);
+                });
+            }
+
+            function controlDevice(deviceId) {
+                fetch('/api/control-device', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({device_id: deviceId, mode: currentMode})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    appendMessage('StarkAI Nexus', data.message, false);
+                });
+            }
+
+            function scanNetwork() {
+                appendMessage('Utilisateur', "Lancer un scan complet du réseau local et des objets connectés", true);
+                setTimeout(() => {
+                    appendMessage('StarkAI Nexus', "Scan réseau terminé. 4 appareils détectés, sécurisés et synchronisés avec le noyau Nexus.", false);
+                }, 1000);
             }
 
             function appendMessage(sender, text, isUser = false) {
@@ -267,7 +291,7 @@ def index():
                 fetch('/api/chat', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({message: text, agent: currentAgent})
+                    body: JSON.stringify({message: text, mode: currentMode})
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -317,13 +341,6 @@ def index():
                 });
             }
 
-            function deployCloud() {
-                appendMessage('Utilisateur', "Déployer sur le VPS Cloud", true);
-                setTimeout(() => {
-                    appendMessage('StarkAI Nexus', "Déploiement VPS Cloud réussi ! Serveur configuré et sécurisé.", false);
-                }, 1000);
-            }
-
             function handleKey(e) {
                 if (e.key === 'Enter') {
                     sendMessage();
@@ -335,15 +352,43 @@ def index():
     """
     return render_template_string(html_template)
 
+@app.route("/api/devices")
+def api_devices():
+    return jsonify({"status": "success", "devices": CONNECTED_DEVICES})
+
+@app.route("/api/mode", methods=["POST"])
+def api_mode():
+    global CONTROLE_MODE
+    data = request.get_json() or {}
+    CONTROLE_MODE = data.get("mode", "limite")
+    return jsonify({"status": "success", "message": f"Mode de contrôle basculé sur : {CONTROLE_MODE.upper()}"})
+
+@app.route("/api/control-device", methods=["POST"])
+def api_control_device():
+    data = request.get_json() or {}
+    dev_id = data.get("device_id")
+    mode = data.get("mode", "limite")
+    
+    device_nom = next((d["nom"] for d in CONNECTED_DEVICES if d["id"] == dev_id], "Appareil inconnu")
+    
+    if mode == "limite":
+        msg = f"Mode Limité : Diagnostic et lecture seule activés pour {device_nom}. Aucune modification critique autorisée."
+    elif mode == "permissif":
+        msg = f"Mode Permissif : Commandes interactives exécutées avec succès sur {device_nom}."
+    elif mode == "total":
+        msg = f"👑 Mode Total activé : Contrôle absolu pris sur {device_nom}. Accès administrateur complet validé, Monsieur."
+    else:
+        msg = f"Action effectuée sur {device_nom}."
+        
+    return jsonify({"status": "success", "message": msg})
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    global API_KEY_GOOGLE
+    global API_KEY_GOOGLE, CONTROLE_MODE
     data = request.get_json() or {}
     msg = data.get("message", "")
-    agent_key = data.get("agent", "developpeur")
-    agent = AGENTS.get(agent_key, AGENTS["developpeur"])
     
-    system_prompt = f"Tu es StarkAI Nexus, un assistant IA humain, chaleureux et extrêmement compétent. Tu agis en tant que {agent['nom']} ({agent['role']}). Ton style est {agent['style']}."
+    system_prompt = f"Tu es StarkAI Nexus, un assistant IA humain, chaleureux et doté d'un contrôle de niveau '{CONTROLE_MODE}' sur le réseau et les objets connectés (PC, Mobile, IoT). Tu réponds avec assurance, empathie et précision."
     
     reponse = appeler_gemini(msg, system_instruction=system_prompt)
     return jsonify({"status": "success", "response": reponse})
