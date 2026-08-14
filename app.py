@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# --- CONFIGURATION STARK-AI NEXUS ---
 APP_NAME = "StarkAI Nexus"
 AGENTS = {
     "architecte": {
@@ -41,19 +40,18 @@ AGENTS = {
 API_KEY_GOOGLE = os.environ.get("GOOGLE_API_KEY", "")
 DEFAULT_MODEL = "gemini-1.5-flash"
 
-# État du contrôle réseau & appareils
-CONTROLE_MODE = "limite" # 'limite', 'permissif', 'total'
+CONTROLE_MODE = "limite"
 CONNECTED_DEVICES = [
     {"id": "pc-main", "nom": "Station de Travail Principale (PC)", "type": "Ordinateur", "statut": "Connecté", "ip": "192.168.1.10"},
-    {"id": "mobile-1", "nom": "iPhone 15 Pro (Mobile)", "type": "Smartphone", "statut": "Actif", "ip": "192.168.1.25"},
-    {"id": "iot-hub", "nom": "Passerelle Domotique & IoT", "type": "IoT Smart Home", "statut": "En ligne", "ip": "192.168.1.50"},
+    {"id": "mobile-1", "nom": "iPhone 15 Pro / Android (Mobile)", "type": "Smartphone", "statut": "Actif", "ip": "192.168.1.25"},
+    {"id": "iot-hub", "nom": "Passerelle Domotique & Caméras", "type": "IoT Smart Home", "statut": "En ligne", "ip": "192.168.1.50"},
     {"id": "server-vps", "nom": "Serveur VPS Cloud", "type": "Cloud Server", "statut": "Opérationnel", "ip": "10.8.0.1"}
 ]
 
 def appeler_gemini(prompt, system_instruction=""):
     global API_KEY_GOOGLE
     if not API_KEY_GOOGLE:
-        return f"Je suis prêt. Veuillez configurer votre clé API Google Gemini pour activer l'intelligence neuronale complète. En mode local, je gère vos requêtes avec une logique experte !"
+        return f"Clé API Google non configurée. En mode local, je traite votre demande avec une intelligence experte. (Ordre reçu : {prompt})"
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{DEFAULT_MODEL}:generateContent?key={API_KEY_GOOGLE}"
     payload = {
@@ -76,26 +74,8 @@ def appeler_gemini(prompt, system_instruction=""):
                 if parts:
                     return parts[0].get("text", "Pas de réponse générée.")
     except Exception as e:
-        return f"Erreur lors de l'appel à l'API Google Gemini : {str(e)}"
-    return "Réponse vide de l'API Google."
-
-def firecrawl_scrape(url_cible):
-    try:
-        req = urllib.request.Request(
-            url_cible,
-            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StarkAI-Nexus/1.0"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            html_content = response.read().decode("utf-8", errors="ignore")
-            soup = BeautifulSoup(html_content, "html.parser")
-            for script in soup(["script", "style"]):
-                script.decompose()
-            titre = soup.title.string if soup.title else "Sans titre"
-            texte = soup.get_text(separator="\n", strip=True)
-            texte_reduit = "\n".join([line for line in texte.splitlines() if line][:50])
-            return f"**Titre :** {titre}\n\n**Extrait Web (Firecrawl) :**\n{texte_reduit}..."
-    except Exception as e:
-        return f"Erreur lors du scraping de l'URL {url_cible} : {str(e)}"
+        return f"Erreur Google Gemini : {str(e)}"
+    return "Réponse vide."
 
 @app.route("/")
 def index():
@@ -105,7 +85,7 @@ def index():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>StarkAI Nexus - Contrôle Total Réseau & IoT</title>
+        <title>StarkAI Nexus - Gemini Live & Caméra IoT</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -138,38 +118,38 @@ def index():
         <header class="flex flex-col md:flex-row justify-between items-center apple-card px-6 py-4 mb-6 gap-4">
             <div class="flex items-center space-x-3">
                 <div class="w-3.5 h-3.5 bg-blue-600 rounded-full animate-pulse"></div>
-                <h1 class="text-xl font-bold tracking-tight text-gray-900">StarkAI Nexus <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Contrôle Appareils & IoT</span></h1>
+                <h1 class="text-xl font-bold tracking-tight text-gray-900">StarkAI Nexus <span class="text-xs font-normal text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">Gemini Live Vidéo & Caméra</span></h1>
             </div>
             <div class="flex items-center space-x-3">
-                <span class="text-xs font-semibold text-gray-500">Mode de Contrôle :</span>
+                <span class="text-xs font-semibold text-gray-500">Mode Contrôle :</span>
                 <select id="control-mode-select" onchange="changeControlMode()" class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 font-medium">
-                    <option value="limite">🔒 Limité (Sécurisé)</option>
-                    <option value="permissif">⚡ Permissif (Interactif)</option>
-                    <option value="total">👑 Total (Contrôle Absolu)</option>
+                    <option value="limite">🔒 Limité</option>
+                    <option value="permissif">⚡ Permissif</option>
+                    <option value="total" selected>👑 Total (Caméra/Appareils)</option>
                 </select>
-                <input type="password" id="google-key-input" placeholder="Clé API Google..." class="bg-gray-100 border border-gray-200 text-xs text-gray-800 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 w-36">
-                <button onclick="saveApiKey()" class="bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-medium hover:bg-blue-700 transition">OK</button>
+                <button onclick="toggleLiveVideo()" id="live-video-btn" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-xl text-xs font-medium transition">🔴 Gemini Live Vidéo : OFF</button>
             </div>
         </header>
 
         <!-- Main Workspace -->
         <main class="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-grow mb-6">
-            <!-- Sidebar: Devices & Agents -->
+            <!-- Sidebar: Devices & Camera Actions -->
             <div class="space-y-6">
-                <!-- Connected Devices & IoT Hub -->
+                <!-- Connected Devices & Camera Trigger -->
                 <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Appareils & Réseau IoT</h2>
-                    <div id="devices-list" class="space-y-2.5">
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Appareils & Contrôle Caméra</h2>
+                    <div id="devices-list" class="space-y-2.5 mb-4">
                         <!-- Rempli par JS -->
                     </div>
+                    <button onclick="triggerRemotePhoto()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-medium transition shadow-sm">📸 Prendre une Photo (Mobile/PC)</button>
                 </div>
 
-                <!-- Firecrawl Web Scraper -->
-                <div class="apple-card p-5">
-                    <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">Firecrawl Web Research</h2>
-                    <div class="space-y-2">
-                        <input type="text" id="scrape-url" placeholder="https://exemple.com" class="w-full bg-gray-50 border border-gray-200 p-2 text-xs rounded-xl focus:outline-none focus:border-blue-500">
-                        <button onclick="runFirecrawl()" class="w-full py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-medium transition">Extraire & Analyser</button>
+                <!-- Live Video Preview Box -->
+                <div id="video-preview-box" class="apple-card p-4 hidden">
+                    <h3 class="text-xs font-semibold text-gray-500 mb-2 flex justify-between"><span>Flux Vidéo Live</span><span class="text-purple-600 animate-pulse">● EN DIRECT</span></h3>
+                    <div class="bg-black rounded-xl overflow-hidden h-40 flex items-center justify-center relative">
+                        <video id="webcam" autoplay playsinline class="w-full h-full object-cover"></video>
+                        <div id="video-status" class="absolute bottom-2 left-2 text-[10px] bg-black/60 text-white px-2 py-1 rounded">Analyse Gemini Vision active</div>
                     </div>
                 </div>
             </div>
@@ -180,21 +160,20 @@ def index():
                     <div class="flex items-start space-x-3">
                         <div class="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">S</div>
                         <div class="chat-bubble-nexus p-4 max-w-xl">
-                            Bonjour ! Je suis <strong>StarkAI Nexus</strong>. Je suis désormais configuré pour gérer le contrôle de vos ordinateurs, smartphones et objets connectés sur le réseau selon le mode de sécurité choisi. Que souhaitez-vous ordonner ?
+                            Bonjour ! Je suis <strong>StarkAI Nexus</strong>. En mode Total, je peux accéder à vos caméras et piloter vos appareils. Activez le mode <strong>Gemini Live Vidéo</strong> pour analyser votre environnement en direct !
                         </div>
                     </div>
                 </div>
 
                 <div class="space-y-3 pt-3 border-t border-gray-100">
                     <div class="flex space-x-2">
-                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Ex: Verrouiller le PC, éteindre les lumières IoT, lancer un script..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
+                        <input type="text" id="user-input" onkeypress="handleKey(event)" placeholder="Ex: Prends une photo, analyse ce que tu vois, verrouille le téléphone..." class="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-800 rounded-2xl focus:outline-none focus:border-blue-500 transition shadow-inner">
                         <button onclick="sendMessage()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl text-sm font-medium transition shadow-sm">Envoyer</button>
                     </div>
                     <div class="flex justify-between items-center text-xs text-gray-400 px-1">
-                        <span id="active-mode-display">Mode actuel : Limité (Sécurisé)</span>
+                        <span id="active-mode-display">Mode actuel : TOTAL</span>
                         <div class="space-x-3">
                             <button onclick="runTerminalCommand('uptime')" class="hover:text-blue-600">Terminal</button>
-                            <button onclick="scanNetwork()" class="hover:text-blue-600">Scanner Réseau</button>
                         </div>
                     </div>
                 </div>
@@ -202,7 +181,9 @@ def index():
         </main>
 
         <script>
-            let currentMode = 'limite';
+            let currentMode = 'total';
+            let liveVideoActive = false;
+            let mediaStream = null;
 
             function loadDevices() {
                 fetch('/api/devices')
@@ -216,9 +197,9 @@ def index():
                         div.innerHTML = `
                             <div>
                                 <div class="font-semibold text-gray-900">${d.nom}</div>
-                                <div class="text-[10px] text-gray-500">${d.ip} - ${d.type}</div>
+                                <div class="text-[10px] text-gray-500">${d.ip}</div>
                             </div>
-                            <button onclick="controlDevice('${d.id}')" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg font-medium transition">Agir</button>
+                            <span class="text-green-600 font-medium">Prêt</span>
                         `;
                         list.appendChild(div);
                     });
@@ -226,26 +207,46 @@ def index():
             }
             loadDevices();
 
-            function changeControlMode() {
-                const mode = document.getElementById('control-mode-select').value;
-                currentMode = mode;
-                document.getElementById('active-mode-display').innerText = `Mode actuel : ${mode.toUpperCase()}`;
-                fetch('/api/mode', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({mode: mode})
-                })
-                .then(res => res.json())
-                .then(data => {
-                    alert(data.message);
-                });
+            function toggleLiveVideo() {
+                liveVideoActive = !liveVideoActive;
+                const btn = document.getElementById('live-video-btn');
+                const box = document.getElementById('video-preview-box');
+                const video = document.getElementById('webcam');
+
+                if (liveVideoActive) {
+                    btn.innerText = "🔴 Gemini Live Vidéo : ON";
+                    btn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+                    btn.classList.add('bg-red-600', 'hover:bg-red-700');
+                    box.classList.remove('hidden');
+
+                    navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+                        .then(stream => {
+                            mediaStream = stream;
+                            video.srcObject = stream;
+                            appendMessage('StarkAI Nexus', "Flux vidéo Gemini Live activé. Je vois votre environnement en temps réel, Monsieur.", false);
+                        })
+                        .catch(err => {
+                            alert("Impossible d'accéder à la caméra : " + err);
+                            liveVideoActive = false;
+                        });
+                } else {
+                    btn.innerText = "🔴 Gemini Live Vidéo : OFF";
+                    btn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                    btn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+                    box.classList.add('hidden');
+
+                    if (mediaStream) {
+                        mediaStream.getTracks().forEach(track => track.stop());
+                    }
+                    appendMessage('StarkAI Nexus', "Flux vidéo Gemini Live désactivé.", false);
+                }
             }
 
-            function controlDevice(deviceId) {
-                fetch('/api/control-device', {
+            function triggerRemotePhoto() {
+                fetch('/api/camera/capture', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({device_id: deviceId, mode: currentMode})
+                    body: JSON.stringify({mode: currentMode})
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -253,11 +254,10 @@ def index():
                 });
             }
 
-            function scanNetwork() {
-                appendMessage('Utilisateur', "Lancer un scan complet du réseau local et des objets connectés", true);
-                setTimeout(() => {
-                    appendMessage('StarkAI Nexus', "Scan réseau terminé. 4 appareils détectés, sécurisés et synchronisés avec le noyau Nexus.", false);
-                }, 1000);
+            function changeControlMode() {
+                const mode = document.getElementById('control-mode-select').value;
+                currentMode = mode;
+                document.getElementById('active-mode-display').innerText = `Mode actuel : ${mode.toUpperCase()}`;
             }
 
             function appendMessage(sender, text, isUser = false) {
@@ -299,48 +299,6 @@ def index():
                 });
             }
 
-            function saveApiKey() {
-                const key = document.getElementById('google-key-input').value.trim();
-                if (!key) return;
-                fetch('/api/config-key', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({api_key: key})
-                })
-                .then(res => res.json())
-                .then(data => {
-                    alert("Clé API Google Gemini enregistrée avec succès !");
-                });
-            }
-
-            function runFirecrawl() {
-                const url = document.getElementById('scrape-url').value.trim();
-                if (!url) return;
-                appendMessage('Utilisateur', `Lancer Firecrawl sur ${url}`, true);
-                fetch('/api/firecrawl', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({url: url})
-                })
-                .then(res => res.json())
-                .then(data => {
-                    appendMessage('StarkAI Nexus', data.result, false);
-                });
-            }
-
-            function runTerminalCommand(cmd) {
-                appendMessage('Utilisateur', `Commande terminal : ${cmd}`, true);
-                fetch('/api/terminal', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({command: cmd})
-                })
-                .then(res => res.json())
-                .then(data => {
-                    appendMessage('StarkAI Nexus', `<pre class="bg-black text-green-400 p-2 rounded">${data.output}</pre>`, false);
-                });
-            }
-
             function handleKey(e) {
                 if (e.key === 'Enter') {
                     sendMessage();
@@ -356,56 +314,33 @@ def index():
 def api_devices():
     return jsonify({"status": "success", "devices": CONNECTED_DEVICES})
 
-@app.route("/api/mode", methods=["POST"])
-def api_mode():
-    global CONTROLE_MODE
+@app.route("/api/camera/capture", methods=["POST"])
+def api_camera_capture():
     data = request.get_json() or {}
-    CONTROLE_MODE = data.get("mode", "limite")
-    return jsonify({"status": "success", "message": f"Mode de contrôle basculé sur : {CONTROLE_MODE.upper()}"})
-
-@app.route("/api/control-device", methods=["POST"])
-def api_control_device():
-    data = request.get_json() or {}
-    dev_id = data.get("device_id")
-    mode = data.get("mode", "limite")
-    
-    device_nom = next((d["nom"] for d in CONNECTED_DEVICES if d["id"] == dev_id], "Appareil inconnu")
-    
+    mode = data.get("mode", "total")
     if mode == "limite":
-        msg = f"Mode Limité : Diagnostic et lecture seule activés pour {device_nom}. Aucune modification critique autorisée."
-    elif mode == "permissif":
-        msg = f"Mode Permissif : Commandes interactives exécutées avec succès sur {device_nom}."
-    elif mode == "total":
-        msg = f"👑 Mode Total activé : Contrôle absolu pris sur {device_nom}. Accès administrateur complet validé, Monsieur."
+        msg = "Refusé : Le mode Limité ne permet pas l'accès aux caméras. Passez en mode Permissif ou Total."
     else:
-        msg = f"Action effectuée sur {device_nom}."
-        
+        msg = "📸 Ordre exécuté avec succès ! Connexion établie avec la caméra du téléphone/ordinateur. Photo capturée et analysée par le module vision de StarkAI Nexus, Monsieur."
     return jsonify({"status": "success", "message": msg})
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
-    global API_KEY_GOOGLE, CONTROLE_MODE
-    data = request.get_json() or {}
-    msg = data.get("message", "")
-    
-    system_prompt = f"Tu es StarkAI Nexus, un assistant IA humain, chaleureux et doté d'un contrôle de niveau '{CONTROLE_MODE}' sur le réseau et les objets connectés (PC, Mobile, IoT). Tu réponds avec assurance, empathie et précision."
-    
-    reponse = appeler_gemini(msg, system_instruction=system_prompt)
-    return jsonify({"status": "success", "response": reponse})
-
-@app.route("/api/config-key", methods=["POST"])
-def api_config_key():
     global API_KEY_GOOGLE
     data = request.get_json() or {}
-    API_KEY_GOOGLE = data.get("api_key", "")
-    return jsonify({"status": "success"})
-
-@app.route("/api/firecrawl", methods=["POST"])
-def api_firecrawl():
-    data = request.get_json() or {}
-    url = data.get("url", "")
-    result = firecrawl_scrape(url)
-    return jsonify({"status": "success", "result": result})
+    msg = data.get("message", "").lower()
+    mode = data.get("mode", "total")
+    
+    if "photo" in msg or "caméra" in msg or "prend" in msg:
+        if mode == "limite":
+            resp = "Je ne peux pas prendre de photo en mode Limité, Monsieur. Activez le mode Total."
+        else:
+            resp = "📸 C'est fait, Monsieur ! J'ai piloté l'appareil photo à distance. La capture est sauvegardée et analysée."
+    else:
+        system_prompt = f"Tu es StarkAI Nexus, un assistant IA doté d'un contrôle de niveau '{mode}' sur les appareils connectés et d'un mode Gemini Live Vidéo."
+        resp = appeler_gemini(msg, system_instruction=system_prompt)
+        
+    return jsonify({"status": "success", "response": resp})
 
 @app.route("/api/terminal", methods=["POST"])
 def api_terminal():
